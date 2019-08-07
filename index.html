@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>D3 covariance error ellipse</title>
+
+    <style>
+        /* Stylesheets for the visualisation */
+        .vertical_grid line {
+            stroke: lightgrey;
+            stroke-opacity: 0.3;
+            stroke-width: 2px;
+            shape-rendering: crispEdges;
+        }
+
+        .horizontal_grid_main line {
+            stroke: lightgrey;
+            stroke-opacity: 0.3;
+            stroke-width: 2px;
+            shape-rendering: crispEdges;
+        }
+
+        .horizontal_grid_additional line {
+            stroke: lightgrey;
+            stroke-opacity: 0.3;
+            stroke-width: 1px;
+            shape-rendering: crispEdges;
+        }
+
+        .vertical_grid_additional line {
+            stroke: lightgrey;
+            stroke-opacity: 0.3;
+            stroke-width: 1px;
+            shape-rendering: crispEdges;
+        }
+
+        .y_tick line, .x_tick line {
+            stroke: black;
+            stroke-opacity: 1;
+            stroke-width: 2px;
+            shape-rendering: crispEdges;
+        }
+
+        .y_tick {
+            font-size: 15px;
+            font-family: Helvetica, Arial, sans-serif;
+        }
+
+        .x_tick {
+            font-size: 15px;
+            font-family: Helvetica, Arial, sans-serif;
+        }
+    </style>
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+
+    <!--  GitHub buttons -->
+    <script async defer src="https://buttons.github.io/buttons.js"></script>
+</head>
+<body>
+    <h1>D3 covariance error ellipse</h1>
+
+    <div style="background-color: rgba(0,0,255,0.3); padding: 10px; color: rgba(0,0,0,0.5); text-align: center;">
+        This demo is <a href="https://observablehq.com/d/ca5fdc0c2f8926a3">Observable</a>.
+
+        <div>
+            <a class="github-button" href="https://github.com/inkuzmin" data-size="large"
+               aria-label="Follow @inkuzmin on GitHub">Follow @inkuzmin</a>
+            <a class="github-button" href="https://github.com/inkuzmin/covar-error-ellipse" data-icon="octicon-star" data-size="large"
+               data-show-count="true" aria-label="Star inkuzmin/edam-select on GitHub">Star</a>
+            <a class="github-button" href="https://github.com/inkuzmin/covar-error-ellipse/fork" data-icon="octicon-repo-forked"
+               data-size="large" data-show-count="true" aria-label="Fork inkuzmin/edam-select on GitHub">Fork</a>
+        </div>
+    </div>
+
+
+
+    <p>This demo is based on "<a href="https://www.xarg.org/2018/04/how-to-plot-a-covariance-error-ellipse/">How to plot a covariance error ellipse</a>" article written by <em>Robert Eisele</em>
+        and "<a href="http://www.visiondummy.com/2014/04/draw-error-ellipse-representing-covariance-matrix/">How to draw a covariance error ellipse?</a>" article written by <em>Vincent Spruyt</em>.
+        Check the articles for the detailed description of mathematics behind it, it's amazingly interesting!</p>
+
+    <h2>NB</h2>
+    <ul>
+        <li>
+            D3 v4 is used in this demo, although it should work equally well with D3 v5.
+        </li>
+        <li>
+            For the sake of convenience I am using ES6 syntax and higher order functions here. Traditional for-loops might be a more efficient solution for huge datasets.
+        </li>
+    </ul>
+
+    <h2>Visualisation</h2>
+    <p>The data points for the visualisation below are generated randomly, reloading the page will display a different plot.</p>
+
+    <svg id="visualisation"></svg>
+
+
+    <h2>Acknowledgements</h2>
+
+    <p>I would like to thank the <a href="https://www.ut.ee/en/">University of Tartu</a> and the <a href="https://biit.cs.ut.ee/">BIIT Research Group</a> for encouraging me to publish this demo.</p>
+
+    <p>The visual styles of the presented plots are designed to resemble <a href="https://ggplot2.tidyverse.org/index.html">ggplot2</a> bw theme.</p>
+
+    <a href="https://www.ut.ee/en/"><img src="https://inkuzmin.github.io/logos/assets/unitartu.svg" width="100"/></a>
+    <a href="https://biit.cs.ut.ee/"><img src="https://inkuzmin.github.io/logos/assets/biit.svg" width="100"/></a>
+
+    <h2>License</h2>
+    CC0 1.0 Universal
+
+    <script>
+        (() => {
+            // data to plot
+            // dataSample1 :: [[x-axis position], [y-axis position]]
+            const dataSample1 = [
+                [...Array(10)].map(e => ~~(Math.random() * 10)),
+                [...Array(20)].map(e => ~~(Math.random() * 20))
+            ];
+
+            // dataSample2 :: [[x-axis position], [y-axis position]]
+            const dataSample2 = [
+                [...Array(20)].map(e => ~~(Math.random() * 20)),
+                [...Array(20)].map(e => ~~(Math.random() * 20))
+            ];
+
+            const colors = ['rgb(228, 26, 28)', 'rgb(55, 126, 184)'];
+            const width = 500;
+            const height = 500;
+            const pad = 10; // defines space between data and coordinate plane borders
+
+            // create scales to map from data to svg dimentions
+            const minX = [...dataSample1[0], ...dataSample2[0]].reduce((x1, x2) => Math.min(x1, x2));
+            const maxX = [...dataSample1[0], ...dataSample2[0]].reduce((x1, x2) => Math.max(x1, x2));
+
+            const minY = [...dataSample1[1], ...dataSample2[1]].reduce((y1, y2) => Math.min(y1, y2));
+            const maxY = [...dataSample1[1], ...dataSample2[1]].reduce((y1, y2) => Math.max(y1, y2));
+
+            // x(data) = svg position for data
+            const x = d3.scaleLinear().domain([minX - pad, maxX + pad]).range([0, width]);
+            const y = d3.scaleLinear().domain([minY - pad, maxY + pad]).range([height, 0]);
+
+            // svg unit = scale * data unit
+            const scaleX = width / ((maxX + pad) - (minX - pad));
+            const scaleY = height / ((maxY + pad) - (minY - pad));
+
+            // create the element to draw the plot at
+            const container = document.getElementById('visualisation');
+
+            // define svg container
+            const svg = d3.select(container)
+                .attr("width", width + 100)
+                .attr("height", height + 100);
+
+            // the layer
+            const layer1 = svg
+                .append("g")
+                .attr("transform", "translate(50, 50)");
+
+
+            // define a clip path
+            svg.append("clipPath")
+                .attr("id", "clip")
+                .append("rect")
+                .attr("x", 0)
+                .attr("y", 0)
+                .attr("height", height)
+                .attr("width", width)
+
+
+            // create a clipped background layer, basically it is the `overflow: hidden` effect for svg
+            const layer0 = svg.append("g")
+                .attr("clip-path", "url(#clip)")
+                .style("clip-path", "url(#clip)")
+                .style("-webkit-clip-path", "url(#clip)")
+                .attr("transform", "translate(50, 50)");
+
+            // The following code consists of 3 main blocks:
+            // 1. Grid -- where coordinate plane is rendered
+            // 2. Dots -- where dots are plotted from data
+            // 3. Ellipses -- where covariance error ellipses are calculated and rendered
+
+            /**
+             * Grid
+             */
+
+            layer1.append("g")
+                .attr("class", "y_tick")
+                .call(d3.axisLeft(y)
+                    .ticks(5)
+                    .tickSize(5)
+                    .tickSizeOuter(0)
+                );
+
+            layer1.append("g")
+                .attr("class", "x_tick")
+                .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisBottom(x)
+                    .ticks(5)
+                    .tickSize(5)
+                    .tickSizeOuter(0)
+                );
+
+            layer1.append("g")
+                .attr("class", "vertical_grid")
+                .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisBottom(x)
+                    .ticks(5)
+                    .tickSize(-height)
+                    .tickFormat("")
+                );
+
+            layer1.append("g")
+                .attr("class", "horizontal_grid_main")
+                .call(d3.axisLeft(y)
+                    .ticks(5)
+                    .tickSize(-width)
+                    .tickFormat("")
+                );
+
+
+            layer1.append("g")
+                .attr("transform", "translate(0, " + height + ")")
+                .attr("class", "vertical_grid_additional")
+                .call(d3.axisBottom(x)
+                    .ticks(20)
+                    .tickSize(-height)
+                    .tickFormat("")
+                );
+
+            layer1.append("g")
+                .attr("class", "horizontal_grid_additional")
+                .call(d3.axisLeft(y)
+                    .ticks(20)
+                    .tickSize(-width)
+                    .tickFormat("")
+                );
+
+            /**
+             * Dots
+             */
+            var pc1Dots = layer1.selectAll(".data_point_1")
+                .attr("class", "data_cloud")
+                .data(() => {
+                    return dataSample1[0].map((_, i) => {
+                        return {
+                            x: dataSample1[0][i],
+                            y: dataSample1[1][i],
+                        };
+                    });
+                })
+                .enter()
+                .append("circle")
+                .attr("fill", function(d) {
+                    return colors[0];
+                })
+                .attr("stroke", function() {
+                    return "#ffffff";
+                })
+                .attr("stroke-opacity", function() {
+                    return 0.5;
+                })
+                .attr("fill-opacity", function() {
+                    return 0.8;
+                })
+                .attr("cx", function(d, i) {
+                    return x(d.x);
+                })
+                .attr("cy", function(d, i) {
+                    return y(d.y);
+                })
+                .attr("r", 1);
+
+            pc1Dots.transition().duration(500)
+                .attr("r", 8);
+
+
+            var pc2Dots = layer1.selectAll(".data_point_1")
+                .attr("class", "data_cloud")
+                .data(() => {
+                    return dataSample2[0].map((_, i) => {
+                        return {
+                            x: dataSample2[0][i],
+                            y: dataSample2[1][i],
+                        };
+                    });
+                })
+                .enter()
+                .append("circle")
+                .attr("fill", function(d) {
+                    return colors[1];
+                })
+                .attr("stroke", function() {
+                    return "#ffffff";
+                })
+                .attr("stroke-opacity", function() {
+                    return 0.5;
+                })
+                .attr("fill-opacity", function() {
+                    return 0.8;
+                })
+                .attr("cx", function(d, i) {
+                    return x(d.x);
+                })
+                .attr("cy", function(d, i) {
+                    return y(d.y);
+                })
+                .attr("r", 1);
+
+            pc2Dots.transition().duration(500)
+                .attr("r", 8);
+
+            /**
+             * Ellipses
+             */
+
+            // util funtion: mean, variance, covar to calculate corresponding values
+            function mean(data) {
+                var sum = 0;
+
+                for (var i = 0; i < data.length; i += 1) {
+                    sum += data[i];
+                }
+
+                return sum / data.length;
+            }
+
+            function variance(data) {
+                var avg = mean(data);
+                var acc = 0;
+                for (var i = 0; i < data.length; i += 1) {
+                    acc += Math.pow(data[i] - avg, 2);
+                }
+
+                return acc / data.length;
+            }
+
+            function covar(xs, ys) {
+                var xm = mean(xs);
+                var ym = mean(ys);
+
+                var acc = 0;
+                for (var i = 0; i < xs.length; i += 1) {
+                    acc += ((xs[i] - xm) * (ys[i] - ym));
+                }
+
+                return (1 / xs.length) * acc;
+            }
+
+            // The following implementation is based on the articles cited above
+
+            // The first ellipse (for dataSample1)
+
+            var dataA = dataSample1[0];
+            var dataB = dataSample1[1];
+
+            var p = 0.95;
+
+            var s = (-2) * Math.log(1 - p);
+
+            var mu = [
+                mean(dataA),
+                mean(dataB)
+            ];
+
+            var a = variance(dataA);
+            var b = covar(dataA, dataB);
+            var c = covar(dataA, dataB);
+            var d = variance(dataB);
+
+            var tmp = Math.sqrt((a - d) * (a - d) + 4 * b * c);
+            var V = [
+                [-(tmp - a + d) / (2 * c), (tmp + a - d) / (2 * c)],
+                [1, 1]
+            ];
+            var sqrtD = [
+                Math.sqrt(s * (a + d - tmp) / 2),
+                Math.sqrt(s * (a + d + tmp) / 2)
+            ];
+
+            var norm1 = Math.hypot(V[0][0], 1);
+            var norm2 = Math.hypot(V[0][1], 1);
+            V[0][0] /= norm1;
+            V[1][0] /= norm1;
+            V[0][1] /= norm2;
+            V[1][1] /= norm2;
+
+            var ndx = sqrtD[0] < sqrtD[1] ? 1 : 0;
+
+            var x1 = mu[0] + V[0][ndx] * sqrtD[ndx];
+            var y1 = mu[1] + V[1][ndx] * sqrtD[ndx];
+
+            var x2 = mu[0] + V[0][1 - ndx] * sqrtD[1 - ndx];
+            var y2 = mu[1] + V[1][1 - ndx] * sqrtD[1 - ndx];
+
+            var cx = mu[0];
+            var cy = mu[1];
+            var rx = Math.hypot(x1 - mu[0], y1 - mu[1]);
+            var ry = Math.hypot(x2 - mu[0], y2 - mu[1]);
+
+            var rotation = -Math.atan2(y1 - mu[1], x1 - mu[0]);
+
+            layer0.append("ellipse")
+                .attr("stroke", function() {
+                    return colors[0];
+                })
+                .attr("fill", "transparent")
+                .attr("stroke-width", "3")
+                .attr("stroke-opacity", "0.5")
+                .attr("cx", x(cx))
+                .attr("cy", y(cy))
+                .attr("rx", rx * scaleX)
+                .attr("ry", ry * scaleY)
+
+                .style("transform", "rotate(" + rotation + "rad)")
+                .style("transform-origin", x(cx) + "px " + y(cy) + "px")
+
+            // The second ellipse (for dataSample2)
+
+            var dataA = dataSample2[0];
+            var dataB = dataSample2[1];
+
+            var p = 0.95;
+
+            var s = (-2) * Math.log(1 - p);
+
+            var mu = [
+                mean(dataA),
+                mean(dataB)
+            ];
+
+            var a = variance(dataA);
+            var b = covar(dataA, dataB);
+            var c = covar(dataA, dataB);
+            var d = variance(dataB);
+
+            var tmp = Math.sqrt((a - d) * (a - d) + 4 * b * c);
+            var V = [
+                [-(tmp - a + d) / (2 * c), (tmp + a - d) / (2 * c)],
+                [1, 1]
+            ];
+            var sqrtD = [
+                Math.sqrt(s * (a + d - tmp) / 2),
+                Math.sqrt(s * (a + d + tmp) / 2)
+            ];
+
+            var norm1 = Math.hypot(V[0][0], 1);
+            var norm2 = Math.hypot(V[0][1], 1);
+            V[0][0] /= norm1;
+            V[1][0] /= norm1;
+            V[0][1] /= norm2;
+            V[1][1] /= norm2;
+
+            var ndx = sqrtD[0] < sqrtD[1] ? 1 : 0;
+
+            var x1 = mu[0] + V[0][ndx] * sqrtD[ndx];
+            var y1 = mu[1] + V[1][ndx] * sqrtD[ndx];
+
+            var x2 = mu[0] + V[0][1 - ndx] * sqrtD[1 - ndx];
+            var y2 = mu[1] + V[1][1 - ndx] * sqrtD[1 - ndx];
+
+            var cx = mu[0];
+            var cy = mu[1];
+            var rx = Math.hypot(x1 - mu[0], y1 - mu[1]);
+            var ry = Math.hypot(x2 - mu[0], y2 - mu[1]);
+
+            var rotation = -Math.atan2(y1 - mu[1], x1 - mu[0]);
+
+            layer0.append("ellipse")
+                .attr("stroke", function() {
+                    return colors[1];
+                })
+                .attr("fill", "transparent")
+                .attr("stroke-width", "3")
+                .attr("stroke-opacity", "0.5")
+                .attr("cx", x(cx))
+                .attr("cy", y(cy))
+                .attr("rx", rx * scaleX)
+                .attr("ry", ry * scaleY)
+
+                .style("transform", "rotate(" + rotation + "rad)")
+                .style("transform-origin", x(cx) + "px " + y(cy) + "px")
+
+
+            // return the container to render
+            return container;
+        })()
+    </script>
+</body>
+</html>
